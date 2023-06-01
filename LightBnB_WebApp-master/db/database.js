@@ -108,36 +108,15 @@ const getAllReservations = function (guest_id, limit = 10) {
  * @return {Promise<[{}]>}  A promise to the properties.
  */
 
-// const getAllProperties = function (options, limit = 10) {
-//   const limitedProperties = {};
-//   for (let i = 1; i <= limit; i++) {
-//     limitedProperties[i] = properties[i];
-//   }
-//   return Promise.resolve(limitedProperties);
-// };
-
-// const getAllProperties = (options, limit = 10) => {
-//   pool
-//     .query(`SELECT * FROM properties LIMIT $1`, [limit])
-//     .then((result) => {
-//       console.log(result.rows);
-//     })
-//     .catch((err) => {
-//       console.log(err.message);
-//     });
-// };
-
 const getAllProperties = (options, limit = 10) => {
   const queryParams = [];
-  // 2
+
   let queryString = `
   SELECT properties.*, avg(property_reviews.rating) as average_rating
   FROM properties
   JOIN property_reviews ON properties.id = property_id
   `;
 
-  // 3
-  // Use iLike for comparing letter cases in postgres
   if (options.city) {
     !queryParams.length ? (queryString += `WHERE `) : (queryString += `AND`);
 
@@ -145,6 +124,7 @@ const getAllProperties = (options, limit = 10) => {
     queryString += `city iLIKE $${queryParams.length} `;
   }
 
+  // if an owner_id is passed in, only return properties belonging to that owner
   if (options.owner_id) {
     !queryParams.length ? (queryString += `WHERE `) : (queryString += `AND`);
 
@@ -152,6 +132,9 @@ const getAllProperties = (options, limit = 10) => {
     queryString += `owner_id = $${queryParams.length} `;
   }
 
+  //if a minimum_price_per_night and a maximum_price_per_night, only return properties within that price range
+  // if minimum_price_per_night has a value. If it does, it adds a WHERE or AND clause to the query string depending on whether there are any previous query parameters
+  //also pushes wavlue of options.minimum_price_per_night multiplied by 100 to the queryParams array and adds a condition to the query string that limits the cost_per_night to be greater than or equal to the value of options_minimum_price_per_night
   if (options.minimum_price_per_night) {
     !queryParams.length ? (queryString += `WHERE `) : (queryString += `AND`);
 
@@ -160,6 +143,8 @@ const getAllProperties = (options, limit = 10) => {
     queryString += `cost_per_night >= $${queryParams.length} `;
   }
 
+  //if maximum_price_per_night has a value. If it does, it adds a WHERE or AND clause to the query string depending on whether there are any previous query parameters
+  //also pushes wavlue of options.maximum_price_per_night multiplied by 100 to the queryParams array and adds a condition to the query string that limits the cost_per_night to be less than or equal to the value of options_maximum_price_per_night
   if (options.maximum_price_per_night) {
     !queryParams.length ? (queryString += `WHERE `) : (queryString += `AND`);
     queryParams.push(options.maximum_price_per_night * 100);
@@ -167,9 +152,10 @@ const getAllProperties = (options, limit = 10) => {
     queryString += `cost_per_night <= $${queryParams.length} `;
   }
 
-  // 4
+
   queryString += `GROUP BY properties.id`;
 
+//if a minimum_rating is passed in, only return properties with an average rating equal to or higher than that
   if (options.minimum_rating) {
     queryParams.push(options.minimum_rating);
     queryString += ` HAVING avg(property_reviews.rating) >= $${queryParams.length} `;
@@ -183,18 +169,7 @@ const getAllProperties = (options, limit = 10) => {
 
   console.log(queryString, queryParams);
 
-  // 6
   return pool.query(queryString, queryParams).then(res => res.rows);
-  
-  // return pool
-  //   .query(`SELECT * FROM properties LIMIT $1`, [limit])
-  //   .then((result) => {
-  //     console.log(result.rows);
-  //     return result.rows;
-  //   })
-  //   .catch((err) => {
-  //     console.log(err.message);
-  //   });
 };
 
 /**
@@ -203,10 +178,36 @@ const getAllProperties = (options, limit = 10) => {
  * @return {Promise<{}>} A promise to the property.
  */
 const addProperty = function (property) {
-  const propertyId = Object.keys(properties).length + 1;
-  property.id = propertyId;
-  properties[propertyId] = property;
-  return Promise.resolve(property);
+ 
+  const queryParams = [
+    property.owner_id,
+    property.title,
+    property.description,
+    property.thumbnail_photo_url,
+    property.cover_photo_url,
+    property.cost_per_night,
+    property.street,
+    property.city,
+    property.province,
+    property.post_code,
+    property.country,
+    property.parking_spaces,
+    property.number_of_bathrooms,
+    property.number_of_bedrooms,
+  ];
+
+  const queryString = `
+  INSERT INTO properties (owner_id,title,description,thumbnail_photo_url,cover_photo_url,cost_per_night,street,city,province,post_code,country,parking_spaces,number_of_bathrooms,number_of_bedrooms)
+  VALUES($3, $6, $9, $12, $15, $18, $21, $24, $27, $30, $33, $36, $39)
+  RETURNING *;`;
+
+  return pool
+      .query(queryString, queryParams)
+      .then(result => result.rows)
+      .catch(err => {
+        console.log(err.message);
+      });
+
 };
 
 module.exports = {
@@ -217,3 +218,8 @@ module.exports = {
   getAllProperties,
   addProperty,
 };
+
+
+// When you add a new property to the database, it will not appear in the My Listings area of your application because it does not have a review or an average rating.
+
+// Therefore, to validate your output, just check that the property has been added by querying the database directly in PostgreSQL.
